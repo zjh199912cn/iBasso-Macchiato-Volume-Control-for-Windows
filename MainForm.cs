@@ -31,12 +31,11 @@ public class MainForm : Form
     nint _winEventHook;
     GCHandle _winEventHookGcHandle;
 
-    // 托盘图标缓存（仅缓存从 DLL 提取的图标，不缓存系统共享图标）
     Icon? _cachedNormalIcon, _cachedMuteIcon;
     bool _iconsFromDll = true;
-
-    // 防止重复弹提示
     bool _registryWarningShown;
+
+    DateTime _lastIconMove = DateTime.MinValue;
 
     delegate void WinEventProc(nint hWinEventHook, uint eventType, nint hwnd,
         int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
@@ -46,7 +45,7 @@ public class MainForm : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80; // WS_EX_TOOLWINDOW
+            cp.ExStyle |= 0x80;
             return cp;
         }
     }
@@ -75,10 +74,7 @@ public class MainForm : Form
                 if (v is int j) _gameMode = j != 0;
             }
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"LoadOsdSetting: {ex.Message}");
-        }
+        catch (Exception ex) { Debug.WriteLine($"LoadOsdSetting: {ex.Message}"); }
     }
 
     void SaveOsdSetting()
@@ -117,9 +113,6 @@ public class MainForm : Form
             "无法保存设置，请检查注册表权限。", ToolTipIcon.Warning);
     }
 
-    // ═══════════════════════════════════════
-    //  托盘图标（优化缓存，避免释放系统图标）
-    // ═══════════════════════════════════════
     string GetSysPath(string dll) => Path.Combine(Environment.SystemDirectory, dll);
 
     Icon? LoadIconFromDll(string dllPath, int index)
@@ -151,7 +144,6 @@ public class MainForm : Form
     Icon MakeTrayIcon()
     {
         bool muted = _device.Muted || _device.Volume == 0;
-
         if (muted)
         {
             if (_cachedMuteIcon == null && _iconsFromDll)
@@ -181,9 +173,6 @@ public class MainForm : Form
         _trayIcon.Text = MakeTip();
     }
 
-    // ═══════════════════════════════════════
-    //  启动 / 关闭
-    // ═══════════════════════════════════════
     async void MainForm_Load(object? sender, EventArgs e)
     {
         this.Location = new Point(-32000, -32000);
@@ -193,7 +182,8 @@ public class MainForm : Form
         if (_device.FindAndOpen())
         {
             Console.WriteLine("设备已连接，正在异步读取音量…");
-            await _device.ReadVolumeAsync();
+            try { await _device.ReadVolumeAsync(); }
+            catch (Exception ex) { Debug.WriteLine($"初始读取失败: {ex.Message}"); }
         }
         else
             Console.WriteLine("⚠ 未检测到设备");
@@ -202,6 +192,7 @@ public class MainForm : Form
         _trayIcon.Text = MakeTip();
         _trayIcon.Visible = true;
         _trayIcon.MouseDown += TrayIcon_MouseDown;
+        _trayIcon.MouseMove += (_, _) => _lastIconMove = DateTime.Now;
 
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Opening += ContextMenu_Opening;
@@ -218,7 +209,6 @@ public class MainForm : Form
     {
         if (_deviceNotifyHandle != 0)
             HidMonitor.UnregisterDeviceNotification(_deviceNotifyHandle);
-
         UninstallWinEventHook();
         _osd?.Close(); _osd = null;
         UninstallHook();
@@ -242,23 +232,6 @@ public class MainForm : Form
         }
     }
 
-    static bool GetTrayRect(out Rectangle r)
-    {
-        r = default;
-        var t = Win32.FindWindow("Shell_TrayWnd", null);
-        if (t == IntPtr.Zero) return false;
-        var n = Win32.FindWindowEx(t, IntPtr.Zero, "TrayNotifyWnd", null);
-        if (n == IntPtr.Zero) return false;
-        Win32.GetWindowRect(n, out Win32.RECT wr);
-        r = new Rectangle(wr.left, wr.top, wr.right - wr.left, wr.bottom - wr.top);
-        return r.Width > 0;
-    }
-
-    static bool IsCursorInTray() => GetTrayRect(out var r) && r.Contains(Cursor.Position);
-
-    // ═══════════════════════════════════════
-    //  右键菜单
-    // ═══════════════════════════════════════
     void ContextMenu_Opening(object? sender, CancelEventArgs e)
     {
         if (_contextMenu == null) return;
@@ -270,11 +243,7 @@ public class MainForm : Form
         _contextMenu.Items.Add(new ToolStripSeparator());
 
         var osdItem = new ToolStripMenuItem("音量弹窗") { Checked = _showVolumeOSD };
-        osdItem.Click += (_, _) =>
-        {
-            _showVolumeOSD = !_showVolumeOSD;
-            SaveOsdSetting();
-        };
+        osdItem.Click += (_, _) => { _showVolumeOSD = !_showVolumeOSD; SaveOsdSetting(); };
         _contextMenu.Items.Add(osdItem);
 
         var gmItem = new ToolStripMenuItem("全屏时暂停") { Checked = _gameMode };
@@ -282,11 +251,7 @@ public class MainForm : Form
         {
             _gameMode = !_gameMode;
             SaveGameModeSetting();
-            if (!_gameMode && _hookSuspended)
-            {
-                _hookSuspended = false;
-                Console.WriteLine("恢复钩子");
-            }
+            if (!_gameMode && _hookSuspended) { _hookSuspended = false; Console.WriteLine("恢复钩子"); }
         };
         _contextMenu.Items.Add(gmItem);
 
@@ -295,29 +260,26 @@ public class MainForm : Form
             using var s = new SettingForm();
             s.ShowInTaskbar = false;
             s.ShowDialog();
+            _osd?.ApplySettings(AppSettings.Load());  // ← 修复3：设置保存后刷新 OSD 缓存
         });
-
         _contextMenu.Items.Add(new ToolStripSeparator());
 
         var auItem = new ToolStripMenuItem("开机自启") { Checked = IsAutostartEnabled() };
         auItem.Click += (_, _) => ToggleAutostart();
         _contextMenu.Items.Add(auItem);
-
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add("退出", null, (_, _) => BeginInvoke(() => Close()));
     }
 
     static bool IsAutostartEnabled()
     {
-        using var k = Registry.CurrentUser.OpenSubKey(
-            @"Software\Microsoft\Windows\CurrentVersion\Run");
+        using var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         return k?.GetValue("MacchiatoTray") != null;
     }
 
     static void ToggleAutostart()
     {
-        using var k = Registry.CurrentUser.OpenSubKey(
-            @"Software\Microsoft\Windows\CurrentVersion\Run", true);
+        using var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
         if (k == null) return;
         if (k.GetValue("MacchiatoTray") != null)
             k.DeleteValue("MacchiatoTray");
@@ -325,9 +287,6 @@ public class MainForm : Form
             k.SetValue("MacchiatoTray", $"\"{Application.ExecutablePath}\"");
     }
 
-    // ═══════════════════════════════════════
-    //  全屏检测
-    // ═══════════════════════════════════════
     void InstallWinEventHook()
     {
         var p = new WinEventProc(OnForegroundChanged);
@@ -339,13 +298,8 @@ public class MainForm : Form
 
     void UninstallWinEventHook()
     {
-        if (_winEventHook != IntPtr.Zero)
-        {
-            UnhookWinEvent(_winEventHook);
-            _winEventHook = IntPtr.Zero;
-        }
-        if (_winEventHookGcHandle.IsAllocated)
-            _winEventHookGcHandle.Free();
+        if (_winEventHook != IntPtr.Zero) { UnhookWinEvent(_winEventHook); _winEventHook = IntPtr.Zero; }
+        if (_winEventHookGcHandle.IsAllocated) _winEventHookGcHandle.Free();
     }
 
     void OnForegroundChanged(nint h, uint t, nint hw, int o, int c, uint th, uint ms)
@@ -355,16 +309,8 @@ public class MainForm : Form
     {
         if (!_gameMode) return;
         bool f = IsForegroundFullscreen();
-        if (f && !_hookSuspended)
-        {
-            _hookSuspended = true;
-            Console.WriteLine("🎮 全屏，暂停钩子");
-        }
-        else if (!f && _hookSuspended)
-        {
-            _hookSuspended = false;
-            Console.WriteLine("🖥 桌面，恢复钩子");
-        }
+        if (f && !_hookSuspended) { _hookSuspended = true; Console.WriteLine("🎮 全屏，暂停钩子"); }
+        else if (!f && _hookSuspended) { _hookSuspended = false; Console.WriteLine("🖥 桌面，恢复钩子"); }
     }
 
     bool IsForegroundFullscreen()
@@ -382,10 +328,8 @@ public class MainForm : Form
             && (wr.bottom - wr.top) >= (mi.rcMonitor.bottom - mi.rcMonitor.top);
     }
 
-    // Win32 API
     [DllImport("user32.dll")]
-    static extern nint SetWinEventHook(uint a, uint b, nint c, WinEventProc d,
-        int e, int f, uint g);
+    static extern nint SetWinEventHook(uint a, uint b, nint c, WinEventProc d, int e, int f, uint g);
     [DllImport("user32.dll")]
     static extern bool UnhookWinEvent(nint h);
     [DllImport("user32.dll")]
@@ -401,12 +345,8 @@ public class MainForm : Form
     [DllImport("shell32.dll", CharSet = CharSet.Auto)]
     static extern nint ExtractIcon(nint hInst, string file, int index);
 
-    const int GWL_STYLE = -16,
-              WS_BORDER = 0x00800000,
-              WS_CAPTION = 0x00C00000;
-    const uint MONITOR_DEFAULTTONEAREST = 2,
-               WINEVENT_OUTOFCONTEXT = 0,
-               EVENT_SYSTEM_FOREGROUND = 3;
+    const int GWL_STYLE = -16, WS_BORDER = 0x00800000, WS_CAPTION = 0x00C00000;
+    const uint MONITOR_DEFAULTTONEAREST = 2, WINEVENT_OUTOFCONTEXT = 0, EVENT_SYSTEM_FOREGROUND = 3;
 
     [StructLayout(LayoutKind.Sequential)]
     struct MONITORINFO
@@ -417,9 +357,6 @@ public class MainForm : Form
         public uint dwFlags;
     }
 
-    // ═══════════════════════════════════════
-    //  OSD
-    // ═══════════════════════════════════════
     void ShowOSD()
     {
         _osd?.RefreshOSD(_device.Muted, _device.Volume,
@@ -440,9 +377,6 @@ public class MainForm : Form
         return $"iBasso Macchiato - {_device.Volume}%";
     }
 
-    // ═══════════════════════════════════════
-    //  钩子
-    // ═══════════════════════════════════════
     void InstallHook()
     {
         _hookHandle = Win32.SetWindowsHookEx(Win32.WH_MOUSE_LL, _hookProc, IntPtr.Zero, 0);
@@ -453,11 +387,7 @@ public class MainForm : Form
 
     void UninstallHook()
     {
-        if (_hookHandle != 0)
-        {
-            Win32.UnhookWindowsHookEx(_hookHandle);
-            _hookHandle = 0;
-        }
+        if (_hookHandle != 0) { Win32.UnhookWindowsHookEx(_hookHandle); _hookHandle = 0; }
     }
 
     nint HookCallback(int nCode, nint wParam, nint lParam)
@@ -466,30 +396,35 @@ public class MainForm : Form
         {
             if (_hookSuspended)
                 return Win32.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
-            if (nCode >= 0 && (int)wParam == Win32.WM_MOUSEWHEEL && IsCursorInTray())
+
+            if (nCode >= 0)
             {
-                var hs = Marshal.PtrToStructure<Win32.MSLLHOOKSTRUCT>(lParam);
-                Win32.PostMessage(Handle, WM_APP_WHEEL,
-                    (nint)(short)(hs.mouseData >> 16), 0);
+                int msg = (int)wParam;
+
+                // 任意鼠标点击 → 立即打断滚轮，关闭 OSD
+                if (msg is Win32.WM_LBUTTONDOWN or Win32.WM_RBUTTONDOWN or Win32.WM_MBUTTONDOWN)
+                {
+                    _lastIconMove = DateTime.MinValue;
+                    _osd?.Hide();
+                }
+
+                // 滚轮：仅当鼠标最近在图标上时生效
+                if (msg == Win32.WM_MOUSEWHEEL
+                    && (DateTime.Now - _lastIconMove).TotalMilliseconds < 500)
+                {
+                    var hs = Marshal.PtrToStructure<Win32.MSLLHOOKSTRUCT>(lParam);
+                    Win32.PostMessage(Handle, WM_APP_WHEEL, (nint)(short)(hs.mouseData >> 16), 0);
+                }
             }
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"HookCallback error: {ex}");
-        }
+        catch (Exception ex) { Debug.WriteLine($"HookCallback error: {ex}"); }
         return Win32.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
 
-    // ═══════════════════════════════════════
-    //  消息处理
-    // ═══════════════════════════════════════
+
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_APP_WHEEL)
-        {
-            HandleWheel((short)(int)m.WParam);
-            return;
-        }
+        if (m.Msg == WM_APP_WHEEL) { HandleWheel((short)(int)m.WParam); return; }
         if (m.Msg == WM_APP_COMMIT)
         {
             if (_pendingVolume >= 0)
@@ -501,11 +436,7 @@ public class MainForm : Form
             }
             return;
         }
-        if (m.Msg == HidMonitor.WM_DEVICECHANGE)
-        {
-            HandleDeviceChange((int)m.WParam);
-            return;
-        }
+        if (m.Msg == HidMonitor.WM_DEVICECHANGE) { HandleDeviceChange((int)m.WParam); return; }
         base.WndProc(ref m);
     }
 
@@ -513,17 +444,11 @@ public class MainForm : Form
     {
         if (wParam == HidMonitor.DBT_DEVICEREMOVECOMPLETE)
         {
-            if (_device.Connected)
-            {
-                Console.WriteLine("🔌 设备已拔出");
-                _device.Close();
-                UpdateTrayIcon();
-            }
+            if (_device.Connected) { Console.WriteLine("🔌 设备已拔出"); _device.Close(); UpdateTrayIcon(); }
         }
         else if (wParam == HidMonitor.DBT_DEVICEARRIVAL)
         {
-            if (!_device.Connected && HidMonitor.IsDevicePresent(0x0661,
-                    MacchiatoDevice.ProductIds))
+            if (!_device.Connected && HidMonitor.IsDevicePresent(0x0661, MacchiatoDevice.ProductIds))
             {
                 Console.WriteLine("🔌 设备已插入");
                 InvalidateIconCache();
@@ -537,18 +462,11 @@ public class MainForm : Form
     {
         if (!_device.Connected) return;
 
-        if (_device.VolumeUnknown)
-        {
-            _ = _device.ReadVolumeAsync();
-            return;
-        }
+        if (_device.VolumeUnknown) { _ = _device.ReadVolumeAsync(); return; }
 
-        int step = Math.Abs(delta) >= 240 ? 4
-                 : Math.Abs(delta) >= 120 ? 2
-                 : 1;
+        int step = Math.Abs(delta) >= 240 ? 4 : Math.Abs(delta) >= 120 ? 2 : 1;
         if (delta < 0) step = -step;
 
-        // 静音状态下滚轮：立刻退出静音并写设备，跳过防抖
         if (_device.Muted)
         {
             _device.AdjustVolume(step);
@@ -561,7 +479,6 @@ public class MainForm : Form
         int baseVol = _pendingVolume >= 0 ? _pendingVolume : _device.Volume;
         int newVol = Math.Clamp(baseVol + step, 0, 100);
         _pendingVolume = newVol;
-
         if (_showVolumeOSD) ShowOSD(newVol, false);
         _debounceTimer.Stop();
         _debounceTimer.Start();

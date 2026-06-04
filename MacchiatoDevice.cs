@@ -44,8 +44,12 @@ public class MacchiatoDevice : IDisposable
             _stream = device.Open();
             _stream.ReadTimeout = 300;
             _reconnectCount = 0;
-            // 异步读取初始音量
-            _ = ReadVolumeAsync();
+            // 异步读取初始音量（带异常处理，避免 fire-and-forget 崩溃）
+            _ = Task.Run(async () =>
+            {
+                try { await ReadVolumeAsync(); }
+                catch (Exception ex) { Debug.WriteLine($"初始读取失败: {ex.Message}"); }
+            });
             Debug.WriteLine($"✓ 已连接: {device.GetProductName()}");
             return true;
         }
@@ -120,12 +124,6 @@ public class MacchiatoDevice : IDisposable
         }
     }
 
-    // 同步版本（兼容旧调用，但不推荐）
-    public void ReadVolume()
-    {
-        ReadVolumeAsync().Wait();
-    }
-
     // ─────────────────────────────────────────
     //  音量写入
     // ─────────────────────────────────────────
@@ -172,38 +170,45 @@ public class MacchiatoDevice : IDisposable
         return Math.Clamp(current + delta, 0, 100);
     }
 
+    // 修复5：状态改在写入成功后
     public void AdjustVolume(int delta)
     {
-        int newVol;
         if (_muted)
         {
-            _muted = false;
-            int baseVol = _preMuteVolume > 0 ? _preMuteVolume : (_volume > 0 ? _volume : 30);
-            newVol = Math.Clamp(baseVol + delta, 0, 100);
-            SetVolumeInternal(newVol);
+            int baseVol = _preMuteVolume > 0 ? _preMuteVolume : (_volume > 0 ? _volume : 10);
+            int newVol = Math.Clamp(baseVol + delta, 0, 100);
+            if (SetVolumeInternal(newVol))
+                _muted = false;
         }
         else
         {
-            newVol = Math.Clamp(_volume + delta, 0, 100);
+            int newVol = Math.Clamp(_volume + delta, 0, 100);
             SetVolumeInternal(newVol);
         }
     }
 
+    // 修复5：状态改在写入成功后
+ 
     public bool ToggleMute()
     {
         if (_muted)
         {
-            _muted = false;
             int restore = _preMuteVolume > 0 ? _preMuteVolume
                         : _volume > 0 ? _volume
-                        : 50;
-            CommitVolume(restore);
+                        : 10;
+            if (CommitVolume(restore))
+            {
+                _muted = false;
+            }
         }
         else
         {
             if (_volume > 0) _preMuteVolume = _volume;
-            _muted = true;
-            CommitVolume(0);
+            else _preMuteVolume = -1;   // ← 加这行，音量0时不残留旧值
+            if (CommitVolume(0))
+            {
+                _muted = true;
+            }
         }
         return _muted;
     }

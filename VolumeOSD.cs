@@ -8,6 +8,9 @@ public class VolumeOSD : Form
 
     Font? _cachedDeviceFont, _cachedIconFont, _cachedTextFont;
 
+    // 修复3：缓存 AppSettings，避免每次弹窗读注册表
+    AppSettings _cachedSettings = AppSettings.Load();
+
     public VolumeOSD()
     {
         FormBorderStyle = FormBorderStyle.None;
@@ -16,7 +19,7 @@ public class VolumeOSD : Form
         StartPosition = FormStartPosition.Manual;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        AutoScaleMode = AutoScaleMode.None; // 手动缩放，避免 DPI 双重缩放
+        AutoScaleMode = AutoScaleMode.None;
         Opacity = 0.85;
         BackColor = Color.FromArgb(32, 32, 32);
         MinimumSize = Size.Empty;
@@ -76,9 +79,12 @@ public class VolumeOSD : Form
         };
     }
 
+    /// <summary>设置保存后调用，刷新 OSD 缓存</summary>
+    public void ApplySettings(AppSettings s) => _cachedSettings = s;
+
     public void RefreshOSD(bool muted, int volume, string? deviceName)
     {
-        var s = AppSettings.Load();
+        var s = _cachedSettings;
         float sf = s.ScalePercent / 100f;
 
         Color bg = Color.FromArgb(s.BgR, s.BgG, s.BgB);
@@ -117,7 +123,6 @@ public class VolumeOSD : Form
         if (!Visible) Show();
     }
 
-    /// <summary>先赋值新字体再释放旧字体，避免 Paint 事件使用已释放的 GDI 对象</summary>
     static void SetLabelFont(ref Font? cache, Label label, string familyName,
         float emSize, FontStyle style)
     {
