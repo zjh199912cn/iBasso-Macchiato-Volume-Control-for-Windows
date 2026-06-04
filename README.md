@@ -2,7 +2,7 @@
 # Macchiato Tray
 
 适用于 **iBasso Macchiato USB DAC** 的 Windows 系统托盘音量控制程序。
-
+基于https://ibasso.cn/uac/#/device/Macchiato WEB控制台，抓取设备控制js文件，获取音量调节代码，然后再让deepseek编写调试与代码审核。
 对标 Twinkle Tray 的交互体验：托盘图标滚轮调音量、左键切静音、右键菜单管理、半透明 OSD 弹窗。  
 **本项目由 DeepSeek AI 编写。**
 
@@ -87,8 +87,10 @@ C# 12 · .NET 8 · WinForms · [HidSharp](https://github.com/IntergatedCircuits/
 ## 致谢
 
 本项目由 **DeepSeek AI** 编写完成。
+<img width="1482" height="1214" alt="image" src="https://github.com/user-attachments/assets/bf7b5ba4-f6f0-4570-a29d-c94a0ece57e0" />
 
 从 Python 到 C# 的迁移、Win32 钩子方案、HID 协议适配、GDI 字体生命周期管理、图标缓存策略、全屏检测实现、热插拔事件驱动重构、单文件发布配置，以及全过程的调试迭代——所有代码均由 DeepSeek 协助生成。
+<img width="1448" height="1086" alt="7c583e3a020d422d4172286db1425f75" src="https://github.com/user-attachments/assets/62c42dc7-ff4a-471a-a1da-61c6759c7bcd" />
 
 ## License
 
