@@ -44,9 +44,10 @@ dotnet build -c Release
 # 发布单文件 EXE
 dotnet publish -c Release -r win-x64 ^
   -p:PublishSingleFile=true ^
-  --self-contained true ^
+  -p:SelfContained=true ^
   -p:InvariantGlobalization=true ^
   -p:EnableCompressionInSingleFile=true
+
 ```
 
 输出：`bin\Release\net8.0-windows\win-x64\publish\MacchiatoTray.exe`
@@ -71,7 +72,8 @@ C# 12 · .NET 8 · WinForms · [HidSharp](https://github.com/IntergatedCircuits/
 ## 常见问题
 
 **Q：滚轮没反应？**  
-确认光标在通知区。Win11 偶尔需重启程序。
+确认鼠标悬停在托盘图标上。离开图标超过 0.5 秒或点击其他地方后滚轮自动失效，重新移回图标即可恢复。
+
 
 **Q：OSD 不弹？**  
 右键托盘图标，勾选「音量弹窗」。
@@ -81,6 +83,9 @@ C# 12 · .NET 8 · WinForms · [HidSharp](https://github.com/IntergatedCircuits/
 
 **Q：设备未连接？**  
 确认 Macchiato 已插入 USB，VID/PID 匹配。
+
+**Q：静音后取消音量跳到奇怪的值？**  
+音量调到 0 后静音再取消会恢复为 10%，这是防止误操作导致音量过大的保护设计。
 
 ---
 
