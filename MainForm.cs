@@ -33,7 +33,7 @@ public class MainForm : Form
 
     // 托盘图标缓存（仅缓存从 DLL 提取的图标，不缓存系统共享图标）
     Icon? _cachedNormalIcon, _cachedMuteIcon;
-    bool _iconsFromDll = true; // 标记当前缓存是否来自 DLL
+    bool _iconsFromDll = true;
 
     // 防止重复弹提示
     bool _registryWarningShown;
@@ -134,7 +134,6 @@ public class MainForm : Form
 
     Icon GetTrayIcon(bool muted)
     {
-        // 优先从 DLL 加载
         string path = GetSysPath("SndVolSSO.dll");
         int idx = muted ? 1 : 0;
         var icon = LoadIconFromDll(path, idx);
@@ -145,7 +144,6 @@ public class MainForm : Form
         icon = LoadIconFromDll(path, idx);
         if (icon != null) return icon;
 
-        // 无法从 DLL 提取时，使用系统图标（但不缓存）
         _iconsFromDll = false;
         return SystemIcons.Information;
     }
@@ -550,13 +548,21 @@ public class MainForm : Form
                  : 1;
         if (delta < 0) step = -step;
 
+        // 静音状态下滚轮：立刻退出静音并写设备，跳过防抖
+        if (_device.Muted)
+        {
+            _device.AdjustVolume(step);
+            _pendingVolume = -1;
+            UpdateTrayIcon();
+            if (_showVolumeOSD) ShowOSD();
+            return;
+        }
+
         int baseVol = _pendingVolume >= 0 ? _pendingVolume : _device.Volume;
         int newVol = Math.Clamp(baseVol + step, 0, 100);
         _pendingVolume = newVol;
 
-        bool effectivelyMuted = _device.Muted && newVol == 0;
-        if (_showVolumeOSD) ShowOSD(newVol, effectivelyMuted);
-
+        if (_showVolumeOSD) ShowOSD(newVol, false);
         _debounceTimer.Stop();
         _debounceTimer.Start();
     }
