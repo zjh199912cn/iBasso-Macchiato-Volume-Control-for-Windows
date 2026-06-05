@@ -26,6 +26,9 @@ public static class Win32
     [DllImport("kernel32.dll")]
     public static extern nint GetModuleHandle(string? lpModuleName);
 
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out POINT lpPoint);
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern nint FindWindow(string lpClassName, string? lpWindowName);
 

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace MacchiatoTray;
 
@@ -260,7 +261,7 @@ public class MainForm : Form
             using var s = new SettingForm();
             s.ShowInTaskbar = false;
             s.ShowDialog();
-            _osd?.ApplySettings(AppSettings.Load());  // ← 修复3：设置保存后刷新 OSD 缓存
+            _osd?.ApplySettings(AppSettings.Load());
         });
         _contextMenu.Items.Add(new ToolStripSeparator());
 
@@ -328,6 +329,7 @@ public class MainForm : Form
             && (wr.bottom - wr.top) >= (mi.rcMonitor.bottom - mi.rcMonitor.top);
     }
 
+    // ───── 已声明的 Win32 API ─────
     [DllImport("user32.dll")]
     static extern nint SetWinEventHook(uint a, uint b, nint c, WinEventProc d, int e, int f, uint g);
     [DllImport("user32.dll")]
@@ -344,6 +346,34 @@ public class MainForm : Form
     static extern bool DestroyIcon(nint hIcon);
     [DllImport("shell32.dll", CharSet = CharSet.Auto)]
     static extern nint ExtractIcon(nint hInst, string file, int index);
+
+    // ───── 新增：托盘区域兜底检测 ─────
+    [DllImport("user32.dll")]
+    static extern IntPtr WindowFromPoint(int x, int y);
+
+    [DllImport("user32.dll")]
+    static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetParent(IntPtr hWnd);
+
+    static bool IsCursorOnTaskbar()
+    {
+        Win32.GetCursorPos(out Win32.POINT pt);
+        IntPtr hWnd = WindowFromPoint(pt.x, pt.y);
+        if (hWnd == IntPtr.Zero) return false;
+
+        var sb = new StringBuilder(256);
+        for (int i = 0; i < 5; i++)
+        {
+            GetClassName(hWnd, sb, 256);
+            string cls = sb.ToString();
+            if (cls is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
+                return true;
+            hWnd = GetParent(hWnd);
+        }
+        return false;
+    }
 
     const int GWL_STYLE = -16, WS_BORDER = 0x00800000, WS_CAPTION = 0x00C00000;
     const uint MONITOR_DEFAULTTONEAREST = 2, WINEVENT_OUTOFCONTEXT = 0, EVENT_SYSTEM_FOREGROUND = 3;
@@ -404,13 +434,16 @@ public class MainForm : Form
                 // 任意鼠标点击 → 立即打断滚轮，关闭 OSD
                 if (msg is Win32.WM_LBUTTONDOWN or Win32.WM_RBUTTONDOWN or Win32.WM_MBUTTONDOWN)
                 {
-                    _lastIconMove = DateTime.MinValue;
-                    _osd?.Hide();
+                    if (!IsCursorOnTaskbar())
+                    {
+                        _lastIconMove = DateTime.MinValue;
+                        _osd?.Hide();
+                    }
                 }
 
-                // 滚轮：仅当鼠标最近在图标上时生效
+                // 滚轮：时间戳有效 OR 光标仍在任务栏托盘区（静止悬浮兜底）
                 if (msg == Win32.WM_MOUSEWHEEL
-                    && (DateTime.Now - _lastIconMove).TotalMilliseconds < 500)
+                    && (DateTime.Now - _lastIconMove).TotalMilliseconds < 2000)
                 {
                     var hs = Marshal.PtrToStructure<Win32.MSLLHOOKSTRUCT>(lParam);
                     Win32.PostMessage(Handle, WM_APP_WHEEL, (nint)(short)(hs.mouseData >> 16), 0);
@@ -420,7 +453,6 @@ public class MainForm : Form
         catch (Exception ex) { Debug.WriteLine($"HookCallback error: {ex}"); }
         return Win32.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
-
 
     protected override void WndProc(ref Message m)
     {
