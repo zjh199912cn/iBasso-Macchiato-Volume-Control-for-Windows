@@ -6,7 +6,7 @@
 对标 Twinkle Tray 的交互体验：托盘图标滚轮调音量、左键切静音、右键菜单管理、半透明 OSD 弹窗。  
 **本项目由 DeepSeek AI 编写。**
 
-<img width="227" height="252" alt="image" src="https://github.com/user-attachments/assets/cfe0192b-8806-4218-9eed-a93cc69dce6f" />
+<img width="227" height="250" alt="image" src="https://github.com/user-attachments/assets/8ba2b7a7-04ad-4528-9c2d-3bbe1e60ea0d" />
 <img width="160" height="161" alt="image" src="https://github.com/user-attachments/assets/bd53f0c7-b05c-41e5-ac36-de404600b797" />
 <img width="151" height="160" alt="image" src="https://github.com/user-attachments/assets/5910c997-f834-408b-877b-4b7eb09a5bd8" />
 
@@ -95,6 +95,7 @@ C# 12 · .NET 8 · WinForms · [HidSharp](https://github.com/IntergatedCircuits/
 <img width="1482" height="1214" alt="image" src="https://github.com/user-attachments/assets/bf7b5ba4-f6f0-4570-a29d-c94a0ece57e0" />
 
 从 Python 到 C# 的迁移、Win32 钩子方案、HID 协议适配、GDI 字体生命周期管理、图标缓存策略、全屏检测实现、热插拔事件驱动重构、单文件发布配置，以及全过程的调试迭代——所有代码均由 DeepSeek 协助生成。
+
 <img width="1448" height="1086" alt="7c583e3a020d422d4172286db1425f75" src="https://github.com/user-attachments/assets/62c42dc7-ff4a-471a-a1da-61c6759c7bcd" />
 
 ## License
