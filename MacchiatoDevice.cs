@@ -23,9 +23,7 @@ public class MacchiatoDevice : IDisposable
     public bool Muted => _muted;
     public bool Connected => _stream != null;
 
-    // ─────────────────────────────────────────
-    //  连接 / 断开
-    // ─────────────────────────────────────────
+    // ── 连接 / 断开 ──
     public bool FindAndOpen()
     {
         foreach (var device in DeviceList.Local.GetHidDevices())
@@ -44,7 +42,7 @@ public class MacchiatoDevice : IDisposable
             _stream = device.Open();
             _stream.ReadTimeout = 300;
             _reconnectCount = 0;
-            // 异步读取初始音量（带异常处理，避免 fire-and-forget 崩溃）
+            // 异步读取初始音量，避免 fire-and-forget 崩溃
             _ = Task.Run(async () =>
             {
                 try { await ReadVolumeAsync(); }
@@ -83,9 +81,7 @@ public class MacchiatoDevice : IDisposable
         return false;
     }
 
-    // ─────────────────────────────────────────
-    //  音量读取（异步，适配 HidSharp 2.x）
-    // ─────────────────────────────────────────
+    // ── 音量读取 ──
     public async Task ReadVolumeAsync()
     {
         if (_stream == null) return;
@@ -124,9 +120,7 @@ public class MacchiatoDevice : IDisposable
         }
     }
 
-    // ─────────────────────────────────────────
-    //  音量写入
-    // ─────────────────────────────────────────
+    // ── 音量写入 ──
     bool SetVolumeInternal(int vol)
     {
         if (_stream == null) return false;
@@ -170,7 +164,7 @@ public class MacchiatoDevice : IDisposable
         return Math.Clamp(current + delta, 0, 100);
     }
 
-    // 修复5：状态改在写入成功后
+    // 写入成功后才更新静音状态，防止虚假切换
     public void AdjustVolume(int delta)
     {
         if (_muted)
@@ -187,8 +181,6 @@ public class MacchiatoDevice : IDisposable
         }
     }
 
-    // 修复5：状态改在写入成功后
- 
     public bool ToggleMute()
     {
         if (_muted)
@@ -204,7 +196,7 @@ public class MacchiatoDevice : IDisposable
         else
         {
             if (_volume > 0) _preMuteVolume = _volume;
-            else _preMuteVolume = -1;   // ← 加这行，音量0时不残留旧值
+            else _preMuteVolume = -1;   // 音量归零时清除静音前记忆值
             if (CommitVolume(0))
             {
                 _muted = true;

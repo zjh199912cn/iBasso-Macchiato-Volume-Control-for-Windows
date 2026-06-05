@@ -243,7 +243,18 @@ public class MainForm : Form
             : "未连接").Enabled = false;
         _contextMenu.Items.Add(new ToolStripSeparator());
 
+        _contextMenu.Items.Add("Web 控制台", null, (_, _) =>
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://ibasso.cn/uac/#/device/Macchiato",
+                UseShellExecute = true
+            });
+        });
+        _contextMenu.Items.Add(new ToolStripSeparator());
+
         var osdItem = new ToolStripMenuItem("音量弹窗") { Checked = _showVolumeOSD };
+
         osdItem.Click += (_, _) => { _showVolumeOSD = !_showVolumeOSD; SaveOsdSetting(); };
         _contextMenu.Items.Add(osdItem);
 
@@ -329,7 +340,7 @@ public class MainForm : Form
             && (wr.bottom - wr.top) >= (mi.rcMonitor.bottom - mi.rcMonitor.top);
     }
 
-    // ───── 已声明的 Win32 API ─────
+    // ── Win32 API ──
     [DllImport("user32.dll")]
     static extern nint SetWinEventHook(uint a, uint b, nint c, WinEventProc d, int e, int f, uint g);
     [DllImport("user32.dll")]
@@ -347,7 +358,7 @@ public class MainForm : Form
     [DllImport("shell32.dll", CharSet = CharSet.Auto)]
     static extern nint ExtractIcon(nint hInst, string file, int index);
 
-    // ───── 新增：托盘区域兜底检测 ─────
+    // ── 托盘区域检测 ──
     [DllImport("user32.dll")]
     static extern IntPtr WindowFromPoint(int x, int y);
 
@@ -431,7 +442,7 @@ public class MainForm : Form
             {
                 int msg = (int)wParam;
 
-                // 任意鼠标点击 → 立即打断滚轮，关闭 OSD
+                // 任意鼠标点击：非任务栏区域则打断滚轮并关闭 OSD
                 if (msg is Win32.WM_LBUTTONDOWN or Win32.WM_RBUTTONDOWN or Win32.WM_MBUTTONDOWN)
                 {
                     if (!IsCursorOnTaskbar())
@@ -441,7 +452,7 @@ public class MainForm : Form
                     }
                 }
 
-                // 滚轮：时间戳有效 OR 光标仍在任务栏托盘区（静止悬浮兜底）
+                // 滚轮：时间戳窗口内有效
                 if (msg == Win32.WM_MOUSEWHEEL
                     && (DateTime.Now - _lastIconMove).TotalMilliseconds < 2000)
                 {

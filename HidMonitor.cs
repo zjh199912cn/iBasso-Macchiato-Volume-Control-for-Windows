@@ -11,7 +11,7 @@ public static class HidMonitor
     const int DIGCF_PRESENT = 0x02;
     const int DIGCF_DEVICEINTERFACE = 0x10;
 
-    // ─── SetupAPI ──────────────────────────
+    // ── SetupAPI ──
     [DllImport("setupapi.dll", SetLastError = true)]
     static extern nint SetupDiGetClassDevs(ref Guid ClassGuid, nint Enumerator,
         nint hwndParent, int Flags);
@@ -37,7 +37,7 @@ public static class HidMonitor
         public nint Reserved;
     }
 
-    // ─── RegisterDeviceNotification ────────
+    // ── RegisterDeviceNotification ──
     [DllImport("user32.dll", SetLastError = true)]
     public static extern nint RegisterDeviceNotification(nint hRecipient,
         ref DEV_BROADCAST_DEVICEINTERFACE NotificationFilter, int Flags);
@@ -49,19 +49,19 @@ public static class HidMonitor
     public struct DEV_BROADCAST_DEVICEINTERFACE
     {
         public int dbcc_size;
-        public int dbcc_devicetype; // DBT_DEVTYP_DEVICEINTERFACE = 5
+        public int dbcc_devicetype;
         public int dbcc_reserved;
         public Guid dbcc_classguid;
     }
 
-    // ─── 常量 ──────────────────────────────
+    // ── 常量 ──
     public const int DBT_DEVTYP_DEVICEINTERFACE = 5;
     public const int DEVICE_NOTIFY_WINDOW_HANDLE = 0;
     public const int WM_DEVICECHANGE = 0x0219;
     public const int DBT_DEVICEARRIVAL = 0x8000;
     public const int DBT_DEVICEREMOVECOMPLETE = 0x8004;
 
-    // ─── 注册设备插拔通知 ──────────────────
+    // ── 注册设备插拔通知 ──
     public static nint Register(IntPtr hWnd)
     {
         var filter = new DEV_BROADCAST_DEVICEINTERFACE
@@ -73,7 +73,7 @@ public static class HidMonitor
         return RegisterDeviceNotification(hWnd, ref filter, DEVICE_NOTIFY_WINDOW_HANDLE);
     }
 
-    // ─── 枚举 HID 设备，检查指定 VID/PID 是否存在 ──
+    // ── 枚举 HID 设备 ──
     public static bool IsDevicePresent(int vendorId, int[] productIds)
     {
         var guid = HidGuid;
@@ -121,7 +121,7 @@ public static class HidMonitor
         }
     }
 
-    // ─── 从设备实例 ID 中解析 VID/PID ──────
+    // ── 解析 VID/PID ──
     static bool TryParseVidPid(string instanceId, out int vid, out int pid)
     {
         vid = 0;

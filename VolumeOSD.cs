@@ -8,7 +8,7 @@ public class VolumeOSD : Form
 
     Font? _cachedDeviceFont, _cachedIconFont, _cachedTextFont;
 
-    // 修复3：缓存 AppSettings，避免每次弹窗读注册表
+    // 缓存 AppSettings 实例，避免每次弹窗读注册表
     AppSettings _cachedSettings = AppSettings.Load();
 
     public VolumeOSD()
