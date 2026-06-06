@@ -238,6 +238,8 @@ public class MainForm : Form
         {
             if (_device.Connected)
             {
+                _debounceTimer.Stop();
+                _targetVolume = -1;
                 _device.ToggleMute();
                 UpdateTrayIcon();
                 ShowOSD();
@@ -516,12 +518,23 @@ public class MainForm : Form
             _osd?.ShowSymbol(_pendingDelta > 0 ? "▲" : "▼",
                 _device.Muted, _device.Connected ? "Macchiato" : null);
 
-        // 实时调整 DAC 音量（16ms 防抖批量写入）
-        int baseVol = _targetVolume >= 0 ? _targetVolume : _device.Volume;
-        if (baseVol < 0) baseVol = 50;
-        _targetVolume = Math.Clamp(baseVol + step, 0, 100);
-        _debounceTimer.Stop();
-        _debounceTimer.Start();
+        // 实时调整 DAC 音量
+        if (_device.Muted && step > 0)
+        {
+            // 静音中向上滚 → 用 AdjustVolume 解除静音并设置音量
+            _device.AdjustVolume(step);
+            _targetVolume = -1;
+            UpdateTrayIcon();
+        }
+        else
+        {
+            // 正常模式：防抖批量写入
+            int baseVol = _targetVolume >= 0 ? _targetVolume : _device.Volume;
+            if (baseVol < 0) baseVol = 50;
+            _targetVolume = Math.Clamp(baseVol + step, 0, 100);
+            _debounceTimer.Stop();
+            _debounceTimer.Start();
+        }
 
         // 停止滚动 500ms 后显示实际数值
         _osdShowTimer.Stop();
