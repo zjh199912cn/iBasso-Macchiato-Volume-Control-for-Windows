@@ -42,7 +42,7 @@ public class MacchiatoDevice : IDisposable
             _stream = device.Open();
             _stream.ReadTimeout = 300;
             _reconnectCount = 0;
-            // 异步读取初始音量，避免 fire-and-forget 崩溃
+            // fire-and-forget 异步读取初始音量
             _ = Task.Run(async () =>
             {
                 try { await ReadVolumeAsync(); }
@@ -81,12 +81,83 @@ public class MacchiatoDevice : IDisposable
         return false;
     }
 
-    // ── 音量读取 ──
+    // ── 音量读取（同步版，供 UI 线程调用，避免 async void 并发问题）──
+    public void ReadVolume()
+    {
+        if (_stream == null) return;
+        try
+        {
+            // 排空 HID 输入缓冲区中的旧报告，避免读到网页 / 物理旋钮操作后残留的过期数据
+            int originalTimeout = _stream.ReadTimeout;
+            _stream.ReadTimeout = 5;
+            try
+            {
+                var drainBuf = new byte[64];
+                for (int i = 0; i < 10; i++)
+                {
+                    try { _stream.Read(drainBuf, 0, drainBuf.Length); }
+                    catch (TimeoutException) { break; }
+                }
+            }
+            finally { _stream.ReadTimeout = originalTimeout; }
+
+            var cmd = new byte[64];
+            cmd[0] = ReportId; cmd[1] = 0x80; cmd[2] = 0x3F;
+            cmd[3] = 0x08; cmd[4] = 0x42; cmd[5] = 0x10;
+            _stream.Write(cmd, 0, cmd.Length);
+
+            var buffer = new byte[64];
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                int bytesRead = _stream.Read(buffer, 0, buffer.Length);
+                if (bytesRead < 6) continue;
+
+                for (int i = 0; i <= bytesRead - 6; i++)
+                {
+                    if (buffer[i] == 0x10 && i + 1 < bytesRead)
+                    {
+                        _volume = Math.Clamp((int)buffer[i + 1], 0, 100);
+                        Debug.WriteLine($"  当前音量: {_volume}% (同步读取成功)");
+                        return;
+                    }
+                }
+            }
+            // 未找到有效响应 → 标记未知
+            _volume = -1;
+            Debug.WriteLine("  读取音量超时（未找到有效响应）");
+        }
+        catch (TimeoutException)
+        {
+            _volume = -1;
+            Debug.WriteLine("  读取音量超时");
+        }
+        catch (Exception ex)
+        {
+            _volume = -1;
+            Debug.WriteLine($"  读取音量失败: {ex.Message}");
+        }
+    }
+
+    // ── 音量读取（异步版，供启动 / 重连时后台使用）──
     public async Task ReadVolumeAsync()
     {
         if (_stream == null) return;
         try
         {
+            // 排空 HID 输入缓冲区中的旧报告（同步，最多 5ms，可接受）
+            int originalTimeout = _stream.ReadTimeout;
+            _stream.ReadTimeout = 5;
+            try
+            {
+                var drainBuf = new byte[64];
+                for (int i = 0; i < 10; i++)
+                {
+                    try { _stream.Read(drainBuf, 0, drainBuf.Length); }
+                    catch (TimeoutException) { break; }
+                }
+            }
+            finally { _stream.ReadTimeout = originalTimeout; }
+
             var cmd = new byte[64];
             cmd[0] = ReportId; cmd[1] = 0x80; cmd[2] = 0x3F;
             cmd[3] = 0x08; cmd[4] = 0x42; cmd[5] = 0x10;
@@ -108,14 +179,18 @@ public class MacchiatoDevice : IDisposable
                     }
                 }
             }
+            // 未找到有效响应 → 标记未知
+            _volume = -1;
             Debug.WriteLine("  读取音量超时（未找到有效响应）");
         }
         catch (TimeoutException)
         {
+            _volume = -1;
             Debug.WriteLine("  读取音量超时");
         }
         catch (Exception ex)
         {
+            _volume = -1;
             Debug.WriteLine($"  读取音量失败: {ex.Message}");
         }
     }

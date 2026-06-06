@@ -2,7 +2,7 @@ namespace MacchiatoTray;
 
 public class VolumeOSD : Form
 {
-    readonly System.Windows.Forms.Timer _closeTimer = new() { Interval = 1200 };
+    readonly System.Windows.Forms.Timer _closeTimer = new() { Interval = 800 };
     readonly Label _deviceLabel, _iconLabel, _textLabel;
     readonly TableLayoutPanel _panel;
 
@@ -17,6 +17,7 @@ public class VolumeOSD : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
+        Location = new Point(-32000, -32000); // 防止首次 Show 时闪在 (0,0)
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         AutoScaleMode = AutoScaleMode.None;
@@ -123,6 +124,50 @@ public class VolumeOSD : Form
         if (!Visible) Show();
     }
 
+    /// <summary>滚动中显示方向符号（不闪数字），保持完整 OSD 布局</summary>
+    public void ShowSymbol(string symbol, bool muted, string? deviceName)
+    {
+        var s = _cachedSettings;
+        float sf = s.ScalePercent / 100f;
+
+        Color bg = Color.FromArgb(s.BgR, s.BgG, s.BgB);
+        BackColor = bg;
+        _panel.BackColor = bg;
+        _deviceLabel.BackColor = bg;
+        _iconLabel.BackColor = bg;
+        _textLabel.BackColor = bg;
+
+        if (s.ShowDeviceName && !string.IsNullOrEmpty(deviceName))
+        {
+            _deviceLabel.Text = deviceName;
+            _deviceLabel.ForeColor = Color.FromArgb(180, 180, 180);
+            SetLabelFont(ref _cachedDeviceFont, _deviceLabel, s.FontName, 8 * sf, FontStyle.Regular);
+            _deviceLabel.Visible = true;
+        }
+        else
+        {
+            _deviceLabel.Visible = false;
+        }
+
+        _iconLabel.Text = muted ? "🔇" : "🔊";
+        SetLabelFont(ref _cachedIconFont, _iconLabel, s.FontName, 18 * sf, FontStyle.Regular);
+
+        _textLabel.Text = symbol;
+        _textLabel.ForeColor = Color.White;
+        var style = s.Bold ? FontStyle.Bold : FontStyle.Regular;
+        SetLabelFont(ref _cachedTextFont, _textLabel, s.FontName, 13 * sf, style);
+
+        // 先 Show 让 AutoSize 计算好宽高，再居中定位
+        if (!Visible) Show();
+
+        var screen = Screen.FromPoint(Cursor.Position);
+        Left = screen.WorkingArea.Left + (screen.WorkingArea.Width - Width) / 2;
+        Top = screen.WorkingArea.Top + (screen.WorkingArea.Height - Height) / 2;
+
+        _closeTimer.Stop();
+        _closeTimer.Start();
+    }
+
     static void SetLabelFont(ref Font? cache, Label label, string familyName,
         float emSize, FontStyle style)
     {
@@ -130,6 +175,13 @@ public class VolumeOSD : Form
         cache = new Font(familyName, emSize, style);
         label.Font = cache;
         old?.Dispose();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        // 禁止系统默认白色背景，消除 layered window 首帧白闪
+        using var brush = new SolidBrush(BackColor);
+        e.Graphics.FillRectangle(brush, e.ClipRectangle);
     }
 
     protected override void Dispose(bool disposing)

@@ -25,8 +25,6 @@ public class AppSettings
         1 => 0, 2 => 64, 3 => 10, _ => 32
     };
 
-    public float ScaleFactor => ScalePercent / 100f;
-
     public static AppSettings Load()
     {
         try

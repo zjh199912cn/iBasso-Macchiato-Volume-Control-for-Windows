@@ -18,10 +18,11 @@ public class MainForm : Form
     nint _deviceNotifyHandle;
 
     const int WM_APP_WHEEL = 0x8001;
-    const int WM_APP_COMMIT = 0x8002;
 
-    int _pendingVolume = -1;
+    int _pendingDelta;
+    int _targetVolume = -1;
     readonly System.Windows.Forms.Timer _debounceTimer = new() { Interval = 16 };
+    readonly System.Windows.Forms.Timer _osdShowTimer = new() { Interval = 500 };
 
     readonly Win32.LowLevelMouseProc _hookProc;
 
@@ -53,12 +54,23 @@ public class MainForm : Form
 
     public MainForm()
     {
+        this.Location = new Point(-32000, -32000);
         ShowInTaskbar = false;
         FormBorderStyle = FormBorderStyle.None;
         Load += MainForm_Load;
         FormClosing += MainForm_FormClosing;
         _hookProc = HookCallback;
-        _debounceTimer.Tick += DebounceTimer_Tick;
+        _debounceTimer.Tick += (_, _) =>
+        {
+            _debounceTimer.Stop();
+            if (_targetVolume >= 0 && _targetVolume != _device.Volume)
+            {
+                _device.CommitVolume(_targetVolume);
+                UpdateTrayIcon();
+            }
+            _targetVolume = -1;
+        };
+        _osdShowTimer.Tick += OsdShowTimer_Tick;
         LoadOsdSetting();
     }
 
@@ -224,7 +236,7 @@ public class MainForm : Form
     {
         if (e.Button == MouseButtons.Left)
         {
-            if (_device.Connected && !_device.VolumeUnknown)
+            if (_device.Connected)
             {
                 _device.ToggleMute();
                 UpdateTrayIcon();
@@ -452,10 +464,11 @@ public class MainForm : Form
                     }
                 }
 
-                // 滚轮：时间戳窗口内有效
+                // 滚轮：时间戳窗口内有效，滚轮事件本身也会续期窗口
                 if (msg == Win32.WM_MOUSEWHEEL
                     && (DateTime.Now - _lastIconMove).TotalMilliseconds < 2000)
                 {
+                    _lastIconMove = DateTime.Now;
                     var hs = Marshal.PtrToStructure<Win32.MSLLHOOKSTRUCT>(lParam);
                     Win32.PostMessage(Handle, WM_APP_WHEEL, (nint)(short)(hs.mouseData >> 16), 0);
                 }
@@ -468,17 +481,6 @@ public class MainForm : Form
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == WM_APP_WHEEL) { HandleWheel((short)(int)m.WParam); return; }
-        if (m.Msg == WM_APP_COMMIT)
-        {
-            if (_pendingVolume >= 0)
-            {
-                if (_pendingVolume != _device.Volume)
-                    _device.CommitVolume(_pendingVolume);
-                _pendingVolume = -1;
-                UpdateTrayIcon();
-            }
-            return;
-        }
         if (m.Msg == HidMonitor.WM_DEVICECHANGE) { HandleDeviceChange((int)m.WParam); return; }
         base.WndProc(ref m);
     }
@@ -505,31 +507,37 @@ public class MainForm : Form
     {
         if (!_device.Connected) return;
 
-        if (_device.VolumeUnknown) { _ = _device.ReadVolumeAsync(); return; }
+        int step = delta > 0 ? 2 : -2;
 
-        int step = Math.Abs(delta) >= 240 ? 4 : Math.Abs(delta) >= 120 ? 2 : 1;
-        if (delta < 0) step = -step;
+        _pendingDelta += step;
 
-        if (_device.Muted)
-        {
-            _device.AdjustVolume(step);
-            _pendingVolume = -1;
-            UpdateTrayIcon();
-            if (_showVolumeOSD) ShowOSD();
-            return;
-        }
+        // 滚动中只显示方向符号
+        if (_showVolumeOSD && _pendingDelta != 0)
+            _osd?.ShowSymbol(_pendingDelta > 0 ? "▲" : "▼",
+                _device.Muted, _device.Connected ? "Macchiato" : null);
 
-        int baseVol = _pendingVolume >= 0 ? _pendingVolume : _device.Volume;
-        int newVol = Math.Clamp(baseVol + step, 0, 100);
-        _pendingVolume = newVol;
-        if (_showVolumeOSD) ShowOSD(newVol, false);
+        // 实时调整 DAC 音量（16ms 防抖批量写入）
+        int baseVol = _targetVolume >= 0 ? _targetVolume : _device.Volume;
+        if (baseVol < 0) baseVol = 50;
+        _targetVolume = Math.Clamp(baseVol + step, 0, 100);
         _debounceTimer.Stop();
         _debounceTimer.Start();
+
+        // 停止滚动 500ms 后显示实际数值
+        _osdShowTimer.Stop();
+        _osdShowTimer.Start();
     }
 
-    void DebounceTimer_Tick(object? s, EventArgs e)
+    void OsdShowTimer_Tick(object? sender, EventArgs e)
     {
-        _debounceTimer.Stop();
-        Win32.PostMessage(Handle, WM_APP_COMMIT, 0, 0);
+        _osdShowTimer.Stop();
+
+        int totalDelta = _pendingDelta;
+        if (totalDelta == 0) return;
+        _pendingDelta = 0;
+
+        // 防抖已提交到 DAC，_device.Volume 即实际值，无需再读设备
+        if (_device.VolumeUnknown) { UpdateTrayIcon(); return; }
+        if (_showVolumeOSD) ShowOSD();
     }
 }
