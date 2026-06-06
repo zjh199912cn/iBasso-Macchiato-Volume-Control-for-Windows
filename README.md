@@ -16,7 +16,7 @@
 - 🖱️ 托盘图标滚轮调节音量（±2）
 - 🖱️ 左键托盘图标切换静音
 - 🖱️ 右键菜单：弹窗开关、全屏暂停钩子、OSD 设置、开机自启、退出
-- 📺 屏幕中央半透明 OSD 弹窗，1.2 秒消失，可自定义
+- 📺 屏幕中央半透明 OSD 弹窗：滚动中显示 ▲/▼ 方向符号，停止 0.5s 后显示音量数值，0.8s 消失，可自定义
 - 🎮 全屏时自动挂起鼠标钩子，防反作弊误判
 - 🔌 设备热插拔自动连接/断开
 - 🎨 OSD 自定义：缩放、背景色、字体、字号、加粗、设备名
@@ -42,11 +42,11 @@ dotnet restore
 dotnet build -c Release
 
 # 发布单文件 EXE
+
 dotnet publish -c Release -r win-x64 ^
+  --self-contained true ^
   -p:PublishSingleFile=true ^
-  -p:SelfContained=true ^
-  -p:InvariantGlobalization=true ^
-  -p:EnableCompressionInSingleFile=true
+  -o publish
 
 ```
 
@@ -72,7 +72,7 @@ C# 12 · .NET 8 · WinForms · [HidSharp](https://github.com/IntergatedCircuits/
 ## 常见问题
 
 **Q：滚轮没反应？**  
-确认鼠标悬停在托盘图标上。离开图标超过 0.5 秒或点击其他地方后滚轮自动失效，重新移回图标即可恢复。
+确认鼠标悬停在托盘图标上。离开图标超过 2 秒或点击其他地方后滚轮自动失效，重新移回图标即可恢复。
 
 
 **Q：OSD 不弹？**  
