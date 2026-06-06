@@ -530,7 +530,8 @@ public class MainForm : Form
         {
             // 正常模式：防抖批量写入
             int baseVol = _targetVolume >= 0 ? _targetVolume : _device.Volume;
-            if (baseVol < 0) baseVol = 50;
+            // 安全音量
+            if (baseVol < 0) baseVol = 10;
             _targetVolume = Math.Clamp(baseVol + step, 0, 100);
             _debounceTimer.Stop();
             _debounceTimer.Start();
