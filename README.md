@@ -1,3 +1,7 @@
+推荐直接用这个内嵌到Twinkle tray的版本
+https://github.com/AIJIAHAO114514/twinkle-tray-iBasso-Macchiato
+
+
 
 # Macchiato Tray
 
